@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "time-series-benchmark"
+version = "0.1.0"
+description = "Benchmarking LightGBM, LSTM and Chronos on time-series forecasting with MLflow tracking"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Vicen-te" }]
+keywords = ["time-series", "forecasting", "mlflow", "lightgbm", "lstm", "chronos", "benchmark"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+]
