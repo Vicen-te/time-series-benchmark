@@ -7,6 +7,7 @@ truth.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -35,3 +36,25 @@ ETTH1_FILENAME: str = "ETTh1.csv"
 
 TARGET_COLUMN: str = "OT"  # Oil Temperature
 DATE_COLUMN: str = "date"
+
+
+@dataclass(frozen=True)
+class SplitConfig:
+    """Temporal 70/15/15 split. Time-series splits MUST be chronological."""
+
+    train_frac: float = 0.70
+    val_frac: float = 0.15
+
+    @property
+    def test_frac(self) -> float:
+        return 1.0 - self.train_frac - self.val_frac
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    split: SplitConfig = field(default_factory=SplitConfig)
+    horizon: int = 1
+    random_state: int = 42
+
+
+CONFIG = BenchmarkConfig()

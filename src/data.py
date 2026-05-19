@@ -7,6 +7,7 @@ hourly rows, target column `OT` (oil temperature in Celsius).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +15,7 @@ import pandas as pd
 import requests
 import certifi
 
-from .config import DATE_COLUMN, ETTH1_FILENAME, ETTH1_URL, RAW_DATA_DIR, TARGET_COLUMN
+from .config import CONFIG, DATE_COLUMN, ETTH1_FILENAME, ETTH1_URL, RAW_DATA_DIR, TARGET_COLUMN
 
 
 def download_etth1(force: bool = False, dest_dir: Optional[Path] = None) -> Path:
@@ -61,3 +62,55 @@ def load_etth1(
         raise KeyError(f"Target column '{target}' missing. Available: {list(df.columns)}")
 
     return df
+
+
+@dataclass
+class TimeSeriesSplit:
+    """Three temporally-ordered slices of the same series."""
+
+    train: pd.DataFrame
+    val: pd.DataFrame
+    test: pd.DataFrame
+
+    @property
+    def sizes(self) -> dict[str, int]:
+        return {"train": len(self.train), "val": len(self.val), "test": len(self.test)}
+
+    def describe(self) -> str:
+        def _range(df: pd.DataFrame) -> str:
+            if df.empty:
+                return "(empty)"
+            return f"{df.index.min()} -> {df.index.max()} ({len(df):,} rows)"
+
+        return (
+            f"train: {_range(self.train)}\n"
+            f"val  : {_range(self.val)}\n"
+            f"test : {_range(self.test)}"
+        )
+
+
+def temporal_split(
+    df: pd.DataFrame,
+    train_frac: float = CONFIG.split.train_frac,
+    val_frac: float = CONFIG.split.val_frac,
+) -> TimeSeriesSplit:
+    """Split the series chronologically.
+
+    Random shuffling would leak future information into the training set, so we
+    cut along the time axis instead.
+    """
+
+    if not 0 < train_frac < 1 or not 0 < val_frac < 1:
+        raise ValueError("Fractions must lie in (0, 1).")
+    if train_frac + val_frac >= 1:
+        raise ValueError("train_frac + val_frac must leave room for a test set.")
+
+    n = len(df)
+    train_end = int(n * train_frac)
+    val_end = int(n * (train_frac + val_frac))
+
+    return TimeSeriesSplit(
+        train=df.iloc[:train_end].copy(),
+        val=df.iloc[train_end:val_end].copy(),
+        test=df.iloc[val_end:].copy(),
+    )
