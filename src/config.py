@@ -24,3 +24,11 @@ MLRUNS_DIR: Path = PROJECT_ROOT / "mlruns"
 
 for _p in (RAW_DATA_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, TABLES_DIR, MLRUNS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
+
+
+# ETTh1: Electricity Transformer Temperature dataset (hourly resolution).
+# Standard benchmark used by Informer/Autoformer papers. ~17K hourly rows.
+ETTH1_URL: str = (
+    "https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh1.csv"
+)
+ETTH1_FILENAME: str = "ETTh1.csv"
