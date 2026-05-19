@@ -32,3 +32,6 @@ ETTH1_URL: str = (
     "https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh1.csv"
 )
 ETTH1_FILENAME: str = "ETTh1.csv"
+
+TARGET_COLUMN: str = "OT"  # Oil Temperature
+DATE_COLUMN: str = "date"
