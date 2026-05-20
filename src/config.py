@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Tuple
 
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
@@ -51,8 +52,19 @@ class SplitConfig:
 
 
 @dataclass(frozen=True)
+class FeatureConfig:
+    """Feature-engineering parameters for the tabular (LightGBM) pipeline."""
+
+    lag_hours: Tuple[int, ...] = (1, 2, 3, 6, 12, 24, 48, 72, 168)
+    rolling_windows: Tuple[int, ...] = (24, 48, 168)
+    rolling_stats: Tuple[str, ...] = ("mean", "std", "min", "max")
+    add_calendar: bool = True
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     split: SplitConfig = field(default_factory=SplitConfig)
+    features: FeatureConfig = field(default_factory=FeatureConfig)
     horizon: int = 1
     random_state: int = 42
 
