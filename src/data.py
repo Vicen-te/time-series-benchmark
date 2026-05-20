@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import requests
 import certifi
@@ -114,3 +115,35 @@ def temporal_split(
         val=df.iloc[train_end:val_end].copy(),
         test=df.iloc[val_end:].copy(),
     )
+
+
+def make_synthetic(n_hours: int = 4000, seed: int = 0) -> pd.DataFrame:
+    """Deterministic synthetic hourly series for offline tests/CI.
+
+    Combines a daily and weekly seasonality, a linear trend and Gaussian noise.
+    Same column layout as ETTh1 so downstream code is exchangeable.
+    """
+
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2020-01-01", periods=n_hours, freq="h")
+    t = np.arange(n_hours)
+    daily = 5.0 * np.sin(2 * np.pi * t / 24)
+    weekly = 2.0 * np.sin(2 * np.pi * t / (24 * 7))
+    trend = 0.001 * t
+    noise = rng.normal(0, 0.5, size=n_hours)
+    ot = 20.0 + daily + weekly + trend + noise
+
+    df = pd.DataFrame(
+        {
+            "HUFL": ot + rng.normal(0, 0.3, size=n_hours),
+            "HULL": ot * 0.5 + rng.normal(0, 0.3, size=n_hours),
+            "MUFL": ot + rng.normal(0, 0.2, size=n_hours),
+            "MULL": ot * 0.4 + rng.normal(0, 0.2, size=n_hours),
+            "LUFL": ot * 0.8 + rng.normal(0, 0.1, size=n_hours),
+            "LULL": ot * 0.3 + rng.normal(0, 0.1, size=n_hours),
+            "OT": ot,
+        },
+        index=idx,
+    )
+    df.index.name = DATE_COLUMN
+    return df
