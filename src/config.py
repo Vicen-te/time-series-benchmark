@@ -62,9 +62,26 @@ class FeatureConfig:
 
 
 @dataclass(frozen=True)
+class LightGBMConfig:
+    n_estimators: int = 800
+    learning_rate: float = 0.05
+    num_leaves: int = 64
+    max_depth: int = -1
+    min_child_samples: int = 20
+    feature_fraction: float = 0.9
+    bagging_fraction: float = 0.9
+    bagging_freq: int = 5
+    reg_alpha: float = 0.0
+    reg_lambda: float = 0.0
+    early_stopping_rounds: int = 50
+    random_state: int = 42
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     split: SplitConfig = field(default_factory=SplitConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+    lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
     horizon: int = 1
     random_state: int = 42
 

@@ -48,7 +48,7 @@ mlartifacts/
 # Data and models
 data/raw/
 data/processed/
-models/
+data/models/
 results/figures/*.png
 !results/figures/.gitkeep
 
