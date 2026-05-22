@@ -78,10 +78,24 @@ class LightGBMConfig:
 
 
 @dataclass(frozen=True)
+class LSTMConfig:
+    input_window: int = 96            # last 96 hours feed the network
+    hidden_size: int = 64
+    num_layers: int = 2
+    dropout: float = 0.2
+    batch_size: int = 64
+    learning_rate: float = 1e-3
+    epochs: int = 25
+    early_stopping_patience: int = 5
+    random_state: int = 42
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     split: SplitConfig = field(default_factory=SplitConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
     lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
+    lstm: LSTMConfig = field(default_factory=LSTMConfig)
     horizon: int = 1
     random_state: int = 42
 
