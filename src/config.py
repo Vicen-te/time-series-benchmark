@@ -91,11 +91,28 @@ class LSTMConfig:
 
 
 @dataclass(frozen=True)
+class ChronosConfig:
+    """Zero-shot foundation model — no training, just inference.
+
+    The pipeline tries a local snapshot first (``data/models/chronos-bolt-small``)
+    and falls back to the HuggingFace Hub. Pre-downloading avoids re-fetching
+    the 183 MB weights on every run and is essential behind strict-SSL networks.
+    """
+
+    model_name: str = "amazon/chronos-bolt-small"
+    local_model_path: str = "data/models/chronos-bolt-small"
+    context_length: int = 512
+    batch_size: int = 32
+    device: str = "auto"   # "cpu", "cuda" or "auto"
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     split: SplitConfig = field(default_factory=SplitConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
     lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
     lstm: LSTMConfig = field(default_factory=LSTMConfig)
+    chronos: ChronosConfig = field(default_factory=ChronosConfig)
     horizon: int = 1
     random_state: int = 42
 
