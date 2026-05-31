@@ -38,6 +38,8 @@ ETTH1_FILENAME: str = "ETTh1.csv"
 TARGET_COLUMN: str = "OT"  # Oil Temperature
 DATE_COLUMN: str = "date"
 
+MLFLOW_EXPERIMENT: str = "time-series-benchmark"
+
 
 @dataclass(frozen=True)
 class SplitConfig:
