@@ -62,7 +62,7 @@ class ChronosForecaster(BaseForecaster):
         self.pipeline_ = BaseChronosPipeline.from_pretrained(
             source,
             device_map=self.device,
-            torch_dtype=dtype,
+            dtype=dtype,
         )
         return self.pipeline_
 
