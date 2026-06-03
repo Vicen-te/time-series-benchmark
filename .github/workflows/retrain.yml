@@ -1,0 +1,61 @@
+name: retrain-benchmark
+
+on:
+  # Manual trigger from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Which models to run (space-separated: lightgbm, lstm, chronos)"
+        required: false
+        default: "lightgbm lstm"
+  # Run automatically when the pipeline code or feature config changes.
+  push:
+    branches: [main]
+    paths:
+      - "src/features.py"
+      - "src/models/**"
+      - "src/train.py"
+      - "src/config.py"
+      - "scripts/run_benchmark.py"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies (CPU-only)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
+      - name: Download dataset
+        run: python scripts/download_data.py
+
+      - name: Run benchmark (LightGBM + LSTM)
+        run: |
+          python scripts/run_benchmark.py --models ${{ github.event.inputs.models || 'lightgbm lstm' }}
+
+      - name: Upload MLflow runs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns
+          path: mlruns/
+          retention-days: 30
+
+      - name: Upload result figures and tables
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: results/
+          retention-days: 30
