@@ -23,7 +23,7 @@ os.environ.setdefault("CURL_CA_BUNDLE", certifi.where())
 
 REPO_ID = "amazon/chronos-bolt-small"
 TARGET_DIR = PROJECT_ROOT / "data" / "models" / "chronos-bolt-small"
-FILES = ("config.json", "generation_config.json", "model.safetensors")
+FILES = ("config.json", "model.safetensors")
 
 
 def _via_huggingface_hub() -> Path | None:

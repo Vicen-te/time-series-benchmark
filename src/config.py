@@ -16,7 +16,6 @@ PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
 
 DATA_DIR: Path = PROJECT_ROOT / "data"
 RAW_DATA_DIR: Path = DATA_DIR / "raw"
-PROCESSED_DATA_DIR: Path = DATA_DIR / "processed"
 
 RESULTS_DIR: Path = PROJECT_ROOT / "results"
 FIGURES_DIR: Path = RESULTS_DIR / "figures"
@@ -24,7 +23,7 @@ TABLES_DIR: Path = RESULTS_DIR / "tables"
 
 MLRUNS_DIR: Path = PROJECT_ROOT / "mlruns"
 
-for _p in (RAW_DATA_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, TABLES_DIR, MLRUNS_DIR):
+for _p in (RAW_DATA_DIR, FIGURES_DIR, TABLES_DIR, MLRUNS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
 
 
