@@ -14,7 +14,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 
-from .config import CONFIG, MLFLOW_EXPERIMENT, MLRUNS_DIR, RESULTS_DIR
+from .config import MLFLOW_EXPERIMENT, MLRUNS_DIR, RESULTS_DIR
 from .data import TimeSeriesSplit, load_etth1, temporal_split
 from .evaluation import Metrics, compute_metrics
 from .models.base import BaseForecaster
@@ -110,12 +110,27 @@ def train_and_evaluate(
             mlflow.log_param("split_val_n", len(splits.val))
             mlflow.log_param("split_test_n", len(splits.test))
 
+            device = getattr(model, "device", None)
+            if device:
+                mlflow.set_tag("device", str(device))
+
             _log_metrics_block("train", train_metrics)
             if val_metrics is not None:
                 _log_metrics_block("val", val_metrics)
             _log_metrics_block("test", test_metrics)
             mlflow.log_metric("fit_seconds", fit_seconds)
             mlflow.log_metric("predict_seconds", predict_seconds)
+
+            # Per-epoch losses so MLflow draws the training curves for models
+            # that expose a history (LSTM does; LightGBM / Chronos don't).
+            for entry in getattr(model, "train_history_", []) or []:
+                epoch = int(entry["epoch"])
+                tl = entry.get("train_loss")
+                if tl is not None and not (isinstance(tl, float) and np.isnan(tl)):
+                    mlflow.log_metric("epoch_train_loss", float(tl), step=epoch)
+                vl = entry.get("val_loss")
+                if vl is not None and not (isinstance(vl, float) and np.isnan(vl)):
+                    mlflow.log_metric("epoch_val_loss", float(vl), step=epoch)
 
             mlflow.log_artifact(str(pred_plot), artifact_path="figures")
             mlflow.log_artifact(str(scatter_plot), artifact_path="figures")
