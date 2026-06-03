@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 from dataclasses import dataclass
@@ -23,6 +24,9 @@ from .plotting import plot_predictions, plot_residuals, plot_scatter
 def configure_mlflow(experiment: str = MLFLOW_EXPERIMENT) -> None:
     """Point MLflow to ./mlruns/ and create the experiment if needed."""
 
+    # MLflow 3.x deprecates file-based tracking stores and raises by default;
+    # opt in explicitly so the workflow runs out-of-the-box without a DB backend.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(MLRUNS_DIR.resolve().as_uri())
     mlflow.set_experiment(experiment)
 

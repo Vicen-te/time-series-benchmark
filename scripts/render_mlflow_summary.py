@@ -7,8 +7,13 @@ README. The data is real — it comes from ``./mlruns``.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# MLflow 3.x deprecates file-based tracking stores and raises by default;
+# opt in explicitly so this renderer works against ./mlruns/ out-of-the-box.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
