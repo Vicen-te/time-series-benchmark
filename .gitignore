@@ -49,8 +49,6 @@ mlartifacts/
 data/raw/
 data/processed/
 data/models/
-results/figures/*.png
-!results/figures/.gitkeep
 
 # Logs
 *.log
