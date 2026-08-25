@@ -59,3 +59,7 @@ Thumbs.db
 
 # Regenerated on every drift check; drift_reference.csv is the committed one.
 results/tables/drift_report.csv
+
+# Sweep artefacts: the per-horizon tables are the evidence and are committed;
+# their figures are not referenced anywhere and would only add weight.
+results/figures/h*/
