@@ -71,6 +71,10 @@ class LSTMForecaster(BaseForecaster):
         self.train_history_: list[Dict[str, float]] = []
         self.best_epoch_: Optional[int] = None
 
+    @property
+    def context_rows(self) -> int:
+        return self.config.input_window + self.horizon - 1
+
     def _standardise(self, x: np.ndarray) -> np.ndarray:
         return (x - self.train_mean_) / max(self.train_std_, 1e-8)
 
@@ -191,12 +195,17 @@ class LSTMForecaster(BaseForecaster):
 
         return self
 
-    def predict(self, df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+    def predict(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.Series, pd.Series]:
         if self.model_ is None:
             raise RuntimeError("Call .fit() before .predict().")
 
         cfg = self.config
-        series = df[self.target].to_numpy(dtype=np.float64)
+        full, _ = self._with_context(df, context)
+        series = full[self.target].to_numpy(dtype=np.float64)
         X, y = _to_windows(self._standardise(series), cfg.input_window, self.horizon)
         if X.size == 0:
             empty = pd.Series([], dtype=np.float64)
@@ -214,11 +223,13 @@ class LSTMForecaster(BaseForecaster):
         y_pred = self._destandardise(y_pred)
 
         # The first valid target is series[input_window + horizon - 1].
-        target_indices = df.index[cfg.input_window + self.horizon - 1 :]
+        target_indices = full.index[cfg.input_window + self.horizon - 1 :]
         target_indices = target_indices[: len(y_pred)]
         y_true = pd.Series(self._destandardise(y), index=target_indices, name="y_true")
         y_pred_series = pd.Series(y_pred, index=target_indices, name="y_pred")
-        return y_true, y_pred_series
+
+        scored = target_indices.isin(df.index)
+        return y_true[scored], y_pred_series[scored]
 
     def get_params(self) -> Dict[str, Any]:
         params = asdict(self.config)

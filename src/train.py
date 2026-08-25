@@ -71,12 +71,18 @@ def train_and_evaluate(
     model.fit(splits.train, splits.val)
     fit_seconds = time.perf_counter() - fit_start
 
+    # Warm-up comes from the preceding split, never from inside the slice being
+    # scored, so every model is judged on the same rows.
+    test_context = pd.concat([splits.train, splits.val]) if not splits.val.empty else splits.train
+
     predict_start = time.perf_counter()
     y_train_true, y_train_pred = model.predict(splits.train)
     y_val_true, y_val_pred = (
-        model.predict(splits.val) if not splits.val.empty else (pd.Series(dtype=float), pd.Series(dtype=float))
+        model.predict(splits.val, context=splits.train)
+        if not splits.val.empty
+        else (pd.Series(dtype=float), pd.Series(dtype=float))
     )
-    y_test_true, y_test_pred = model.predict(splits.test)
+    y_test_true, y_test_pred = model.predict(splits.test, context=test_context)
     predict_seconds = time.perf_counter() - predict_start
 
     train_metrics = compute_metrics(y_train_true, y_train_pred)
@@ -101,6 +107,7 @@ def train_and_evaluate(
         "n_train": len(splits.train),
         "n_val": len(splits.val),
         "n_test": len(splits.test),
+        "context_rows": model.context_rows,
     }
 
     if log_to_mlflow:
@@ -109,6 +116,7 @@ def train_and_evaluate(
             mlflow.log_param("split_train_n", len(splits.train))
             mlflow.log_param("split_val_n", len(splits.val))
             mlflow.log_param("split_test_n", len(splits.test))
+            mlflow.log_param("context_rows", model.context_rows)
 
             device = getattr(model, "device", None)
             if device:

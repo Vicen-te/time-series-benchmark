@@ -35,8 +35,26 @@ class LightGBMForecaster(BaseForecaster):
         self.feature_cols_: list[str] = []
         self.best_iteration_: Optional[int] = None
 
+    @property
+    def context_rows(self) -> int:
+        cfg = CONFIG.features
+        deepest = max(max(cfg.lag_hours), max(cfg.rolling_windows))
+        return self.horizon - 1 + deepest
+
     def _prepare(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, list[str]]:
         return build_feature_matrix(df, target=self.target, horizon=self.horizon)
+
+    def _prepare_scored(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame],
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """Feature matrix for ``df`` alone, warmed up from ``context``."""
+
+        full, _ = self._with_context(df, context)
+        X, y, _ = self._prepare(full)
+        scored = X.index.isin(df.index)
+        return X.loc[scored], y.loc[scored]
 
     def fit(
         self,
@@ -62,7 +80,7 @@ class LightGBMForecaster(BaseForecaster):
         callbacks = [lgb.log_evaluation(period=0)]
         eval_set = None
         if val_df is not None and not val_df.empty:
-            X_val, y_val, _ = self._prepare(val_df)
+            X_val, y_val = self._prepare_scored(val_df, train_df)
             eval_set = [(X_val[self.feature_cols_], y_val)]
             callbacks.append(lgb.early_stopping(stopping_rounds=early_stopping, verbose=False))
 
@@ -75,10 +93,14 @@ class LightGBMForecaster(BaseForecaster):
         self.best_iteration_ = getattr(self.model_, "best_iteration_", None)
         return self
 
-    def predict(self, df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+    def predict(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.Series, pd.Series]:
         if self.model_ is None:
             raise RuntimeError("Call .fit() before .predict().")
-        X, y, _ = self._prepare(df)
+        X, y = self._prepare_scored(df, context)
         preds = self.model_.predict(X[self.feature_cols_])
         return y.rename("y_true"), pd.Series(preds, index=y.index, name="y_pred")
 

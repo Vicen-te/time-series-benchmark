@@ -123,11 +123,12 @@ def plot_metrics_bar(
     models = list(metrics_by_model.keys())
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 4))
-    palette = ["#1c7ed6", "#37b24d", "#f08c00"]
+    palette = ["#1c7ed6", "#37b24d", "#f08c00", "#d6336c", "#7048e8"]
 
     for ax, metric in zip(axes, metric_keys):
         values = [metrics_by_model[m].get(metric, np.nan) for m in models]
-        bars = ax.bar(models, values, color=palette[: len(models)])
+        colors = [palette[i % len(palette)] for i in range(len(models))]
+        bars = ax.bar(models, values, color=colors)
         ax.set_title(metric.upper())
         ax.grid(axis="y", alpha=0.25)
         for bar, value in zip(bars, values):

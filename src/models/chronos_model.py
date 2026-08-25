@@ -41,9 +41,10 @@ class ChronosForecaster(BaseForecaster):
         self.config = config or CONFIG.chronos
         self.device = _resolve_device(self.config.device)
         self.pipeline_ = None
-        # Stitch full history together so test windows see train+val context.
-        self._history_: Optional[np.ndarray] = None
-        self._history_index_: Optional[pd.DatetimeIndex] = None
+
+    @property
+    def context_rows(self) -> int:
+        return self.config.context_length
 
     def _load_pipeline(self):
         if self.pipeline_ is not None:
@@ -72,28 +73,26 @@ class ChronosForecaster(BaseForecaster):
         val_df: Optional[pd.DataFrame] = None,
         **_: Any,
     ) -> "ChronosForecaster":
-        """No training. We cache train (+ val) history for rolling inference."""
+        """No training -- we only make sure the weights are resident."""
 
-        history_frames = [train_df[self.target]]
-        if val_df is not None and not val_df.empty:
-            history_frames.append(val_df[self.target])
-        combined = pd.concat(history_frames)
-        self._history_ = combined.to_numpy(dtype=np.float32)
-        self._history_index_ = combined.index
+        if self.target not in train_df.columns:
+            raise KeyError(f"Target column '{self.target}' not found in DataFrame.")
         self._load_pipeline()
         return self
 
-    def predict(self, df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+    def predict(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.Series, pd.Series]:
         if self.pipeline_ is None:
             raise RuntimeError("Call .fit() before .predict().")
-        if self._history_ is None:
-            raise RuntimeError("Internal history not set.")
 
         target_values = df[self.target].to_numpy(dtype=np.float32)
         target_index = df.index
 
-        full_series = np.concatenate([self._history_, target_values])
-        history_offset = len(self._history_)
+        full, history_offset = self._with_context(df, context)
+        full_series = full[self.target].to_numpy(dtype=np.float32)
         context_length = self.config.context_length
         horizon = self.horizon
 

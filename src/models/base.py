@@ -15,6 +15,18 @@ class BaseForecaster(ABC):
 
     name: str = "base"
 
+    @property
+    def context_rows(self) -> int:
+        """How many rows of history immediately before a frame ``predict`` needs.
+
+        Warm-up taken from inside the evaluated frame silently shortens the
+        window a model is scored on, and by a different amount per model. Each
+        forecaster declares its requirement here so the caller can hand it the
+        preceding split instead.
+        """
+
+        return 0
+
     @abstractmethod
     def fit(
         self,
@@ -25,8 +37,16 @@ class BaseForecaster(ABC):
         ...
 
     @abstractmethod
-    def predict(self, df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
-        """Return ``(y_true, y_pred)`` aligned on the same DatetimeIndex."""
+    def predict(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.Series, pd.Series]:
+        """Return ``(y_true, y_pred)`` for the rows of ``df``, aligned on its index.
+
+        ``context`` holds the rows directly preceding ``df``; the last
+        ``context_rows`` of it are used as warm-up and never scored.
+        """
 
     @abstractmethod
     def get_params(self) -> Dict[str, Any]:
@@ -35,7 +55,7 @@ class BaseForecaster(ABC):
     def save(self, output_dir: Path) -> Path:
         """Persist the fitted model to ``output_dir`` and return the path.
 
-        Default implementation does nothing useful — concrete subclasses with
+        Default implementation does nothing useful -- concrete subclasses with
         actual trainable parameters override this to drop weights to disk.
         Zero-shot models can keep the no-op behaviour.
         """
@@ -43,6 +63,27 @@ class BaseForecaster(ABC):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
+
+    def _with_context(
+        self,
+        df: pd.DataFrame,
+        context: Optional[pd.DataFrame],
+    ) -> Tuple[pd.DataFrame, int]:
+        """Prepend the needed tail of ``context`` to ``df``.
+
+        Returns the combined frame and how many warm-up rows were prepended.
+        """
+
+        rows = self.context_rows
+        if context is None or rows <= 0 or context.empty:
+            return df, 0
+
+        tail = context.tail(rows)
+        if not tail.index.max() < df.index.min():
+            raise ValueError("context must end strictly before df begins.")
+
+        combined = pd.concat([tail[df.columns], df])
+        return combined, len(tail)
 
     @staticmethod
     def align(y_true: pd.Series, y_pred: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
