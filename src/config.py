@@ -34,6 +34,12 @@ ETTH1_URL: str = (
 )
 ETTH1_FILENAME: str = "ETTh1.csv"
 
+# The URL points at a branch, not a tag, so it can change under us. Every
+# number in this repository was measured against this exact file; pinning the
+# digest is what makes "reproducible" mean something more than "re-runnable".
+ETTH1_SHA256: str = "f18de3ad269cef59bb07b5438d79bb3042d3be49bdeecf01c1cd6d29695ee066"
+ETTH1_BYTES: int = 2_589_657
+
 TARGET_COLUMN: str = "OT"  # Oil Temperature
 DATE_COLUMN: str = "date"
 

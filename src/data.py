@@ -7,6 +7,7 @@ hourly rows, target column `OT` (oil temperature in Celsius).
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -16,10 +17,46 @@ import pandas as pd
 import requests
 import certifi
 
-from .config import CONFIG, DATE_COLUMN, ETTH1_FILENAME, ETTH1_URL, RAW_DATA_DIR, TARGET_COLUMN
+from .config import (
+    CONFIG,
+    DATE_COLUMN,
+    ETTH1_FILENAME,
+    ETTH1_SHA256,
+    ETTH1_URL,
+    RAW_DATA_DIR,
+    TARGET_COLUMN,
+)
 
 
-def download_etth1(force: bool = False, dest_dir: Optional[Path] = None) -> Path:
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_etth1(path: Path, expected: str = ETTH1_SHA256) -> None:
+    """Raise unless ``path`` is byte-for-byte the file the results came from."""
+
+    actual = sha256_of(path)
+    if actual != expected:
+        raise ValueError(
+            f"{path} does not match the pinned dataset.\n"
+            f"  expected sha256 {expected}\n"
+            f"  found    sha256 {actual}\n"
+            "The upstream URL tracks a branch, so the file may have been "
+            "changed at source. Re-pin ETTH1_SHA256 in src/config.py only "
+            "after deciding the new file is the one you want, and regenerate "
+            "the results and the drift reference with it."
+        )
+
+
+def download_etth1(
+    force: bool = False,
+    dest_dir: Optional[Path] = None,
+    verify_checksum: bool = True,
+) -> Path:
     """Download ETTh1.csv into ``data/raw/`` if not already present."""
 
     dest_dir = dest_dir or RAW_DATA_DIR
@@ -27,6 +64,8 @@ def download_etth1(force: bool = False, dest_dir: Optional[Path] = None) -> Path
     dest = dest_dir / ETTH1_FILENAME
 
     if dest.exists() and not force:
+        if verify_checksum:
+            verify_etth1(dest)
         return dest
 
     # certifi bundles up-to-date root certificates; using it avoids the
@@ -34,6 +73,8 @@ def download_etth1(force: bool = False, dest_dir: Optional[Path] = None) -> Path
     response = requests.get(ETTH1_URL, timeout=60, verify=certifi.where())
     response.raise_for_status()
     dest.write_bytes(response.content)
+    if verify_checksum:
+        verify_etth1(dest)
     return dest
 
 
@@ -41,6 +82,7 @@ def load_etth1(
     target: str = TARGET_COLUMN,
     csv_path: Optional[Path] = None,
     download_if_missing: bool = True,
+    verify_checksum: bool = True,
 ) -> pd.DataFrame:
     """Load ETTh1 as a DataFrame indexed by hourly timestamp.
 
@@ -53,7 +95,9 @@ def load_etth1(
             raise FileNotFoundError(
                 f"{csv_path} not found. Run `python scripts/download_data.py` first."
             )
-        csv_path = download_etth1()
+        csv_path = download_etth1(verify_checksum=verify_checksum)
+    elif verify_checksum:
+        verify_etth1(csv_path)
 
     df = pd.read_csv(csv_path)
     df[DATE_COLUMN] = pd.to_datetime(df[DATE_COLUMN])
