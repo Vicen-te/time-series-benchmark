@@ -5,8 +5,10 @@ Produces three families of features:
 - Rolling statistics over multiple windows.
 - Calendar features (hour, day-of-week, month, weekend flag, cyclical encodings).
 
-All features are computed using ONLY past observations so there is no target
-leakage when training a model to predict ``y[t+horizon]``.
+Every row is labelled with the timestamp it predicts: ``y[t]`` is ``target[t]``
+and every lag/rolling feature on that row is derived from observations no later
+than ``t - horizon``. Calendar features are the exception and legitimately so --
+the clock is known ahead of time.
 """
 
 from __future__ import annotations
@@ -23,10 +25,13 @@ def add_lag_features(
     df: pd.DataFrame,
     target: str,
     lags: Iterable[int],
+    offset: int = 0,
 ) -> pd.DataFrame:
+    """Lag ``target`` by ``offset + lag`` for each requested lag."""
+
     out = df.copy()
     for lag in lags:
-        out[f"{target}_lag_{lag}"] = out[target].shift(lag)
+        out[f"{target}_lag_{lag}"] = out[target].shift(offset + lag)
     return out
 
 
@@ -35,10 +40,12 @@ def add_rolling_features(
     target: str,
     windows: Iterable[int],
     stats: Iterable[str],
+    shift: int = 1,
 ) -> pd.DataFrame:
+    """Rolling stats over a window ending ``shift`` rows before the current one."""
+
     out = df.copy()
-    # shift(1) so the rolling window NEVER sees the current row.
-    shifted = out[target].shift(1)
+    shifted = out[target].shift(shift)
     for window in windows:
         roll = shifted.rolling(window=window, min_periods=max(2, window // 4))
         for stat in stats:
@@ -79,28 +86,35 @@ def build_feature_matrix(
 ) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
     """Return ``(X, y, feature_names)`` ready for a tabular learner.
 
-    ``y[t]`` corresponds to ``target[t + horizon]`` so the model predicts a
-    future value strictly from past information.
+    ``y[t]`` is ``target[t]``, and the newest observation any lag or rolling
+    feature on row ``t`` can reach is ``t - horizon``. A model trained on this
+    matrix therefore forecasts exactly ``horizon`` steps past the last value it
+    is allowed to see, which is what makes its error comparable to a sequence
+    model fed the same history.
     """
 
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1.")
     if target not in df.columns:
         raise KeyError(f"Target column '{target}' not found in DataFrame.")
 
     work = df[[target]].copy()
-    work = add_lag_features(work, target=target, lags=config.lag_hours)
+    work = add_lag_features(
+        work, target=target, lags=config.lag_hours, offset=horizon - 1
+    )
     work = add_rolling_features(
-        work, target=target, windows=config.rolling_windows, stats=config.rolling_stats
+        work,
+        target=target,
+        windows=config.rolling_windows,
+        stats=config.rolling_stats,
+        shift=horizon,
     )
     if config.add_calendar:
         work = add_calendar_features(work)
 
-    work[f"{target}_target"] = work[target].shift(-horizon)
-
-    feature_cols = [
-        c for c in work.columns if c not in (target, f"{target}_target")
-    ]
+    feature_cols = [c for c in work.columns if c != target]
     X = work[feature_cols]
-    y = work[f"{target}_target"]
+    y = work[target]
 
     if dropna:
         valid = X.notna().all(axis=1) & y.notna()

@@ -26,6 +26,13 @@ def test_lag_features_do_not_leak_future() -> None:
     assert out["OT_lag_1"].iloc[5] == pytest.approx(df["OT"].iloc[4])
 
 
+def test_lag_offset_pushes_every_lag_further_back() -> None:
+    df = make_synthetic(n_hours=200)
+    out = add_lag_features(df, target="OT", lags=(1, 2), offset=3)
+    assert out["OT_lag_1"].iloc[10] == pytest.approx(df["OT"].iloc[6])
+    assert out["OT_lag_2"].iloc[10] == pytest.approx(df["OT"].iloc[5])
+
+
 def test_rolling_window_does_not_include_current_row() -> None:
     df = make_synthetic(n_hours=300)
     out = add_rolling_features(df, target="OT", windows=(24,), stats=("mean",))
@@ -47,7 +54,7 @@ def test_calendar_features_have_expected_columns_and_ranges() -> None:
     assert np.isclose(out["hour_sin"].pow(2) + out["hour_cos"].pow(2), 1.0).all()
 
 
-def test_build_feature_matrix_aligns_target_with_horizon() -> None:
+def test_build_feature_matrix_labels_rows_with_the_predicted_timestamp() -> None:
     df = make_synthetic(n_hours=500)
     cfg = FeatureConfig(lag_hours=(1, 2, 24), rolling_windows=(24,), rolling_stats=("mean",))
     X, y, feature_cols = build_feature_matrix(df, target="OT", horizon=1, config=cfg)
@@ -55,13 +62,51 @@ def test_build_feature_matrix_aligns_target_with_horizon() -> None:
     assert "OT_lag_1" in feature_cols
     assert "OT_roll_mean_24" in feature_cols
     assert "hour" in feature_cols
-    # Target at index t is the original value at index t + 1.
+    # The raw target column is never handed to the model as a feature.
+    assert "OT" not in feature_cols
+    # Row t carries the value observed at t, not at t + 1.
     first_ts = y.index[0]
-    expected = df["OT"].loc[first_ts + pd.Timedelta(hours=1)]
-    assert y.iloc[0] == pytest.approx(expected, rel=1e-9)
+    assert y.iloc[0] == pytest.approx(df["OT"].loc[first_ts], rel=1e-9)
+
+
+@pytest.mark.parametrize("horizon", [1, 2, 3])
+def test_effective_horizon_matches_requested_horizon(horizon: int) -> None:
+    """The freshest observation reachable from row ``t`` is ``t - horizon``.
+
+    Getting this wrong is invisible in the metrics -- the model simply scores
+    as if it were forecasting further ahead than advertised -- so it is pinned
+    explicitly rather than left to the shift arithmetic.
+    """
+
+    df = make_synthetic(n_hours=400)
+    cfg = FeatureConfig(lag_hours=(1,), rolling_windows=(24,), rolling_stats=("mean",))
+    X, y, _ = build_feature_matrix(df, target="OT", horizon=horizon, config=cfg)
+
+    t = y.index[50]
+    pos = df.index.get_loc(t)
+
+    # Row t is labelled with the value it predicts.
+    assert y.loc[t] == pytest.approx(df["OT"].loc[t], rel=1e-9)
+
+    # The nearest lag stops exactly `horizon` steps short of it.
+    assert X["OT_lag_1"].loc[t] == pytest.approx(
+        df["OT"].loc[t - pd.Timedelta(hours=horizon)], rel=1e-9
+    )
+
+    # ...and so does the rolling window.
+    end = pos - horizon
+    assert X["OT_roll_mean_24"].loc[t] == pytest.approx(
+        df["OT"].iloc[end - 23 : end + 1].mean(), rel=1e-6
+    )
 
 
 def test_build_feature_matrix_rejects_missing_target() -> None:
     df = make_synthetic(n_hours=100)
     with pytest.raises(KeyError):
         build_feature_matrix(df, target="ghost", horizon=1)
+
+
+def test_build_feature_matrix_rejects_non_positive_horizon() -> None:
+    df = make_synthetic(n_hours=100)
+    with pytest.raises(ValueError):
+        build_feature_matrix(df, target="OT", horizon=0)
