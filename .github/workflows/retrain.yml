@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       models:
-        description: "Which models to run (space-separated: lightgbm, lstm, chronos)"
+        description: "Which models to run (space-separated: persistence, lightgbm, lstm, chronos)"
         required: false
-        default: "lightgbm lstm"
+        default: "persistence lightgbm lstm"
   # Run automatically when the pipeline code or feature config changes.
   push:
     branches: [main]
@@ -40,9 +40,21 @@ jobs:
       - name: Download dataset
         run: python scripts/download_data.py
 
-      - name: Run benchmark (LightGBM + LSTM)
+      - name: Run benchmark
         run: |
-          python scripts/run_benchmark.py --models ${{ github.event.inputs.models || 'lightgbm lstm' }}
+          python scripts/run_benchmark.py             --models ${{ github.event.inputs.models || 'persistence lightgbm lstm' }}             --device cpu
+
+      # Retraining that publishes its artefacts without checking them is how a
+      # worse model becomes the new reference.
+      - name: Compare against baseline
+        id: gate
+        continue-on-error: true
+        run: |
+          python scripts/check_regression.py             --baseline results/tables/baseline_cpu.csv             --candidate results/tables/benchmark_summary.csv             --metric rmse             --tolerance 0.03             --summary-out gate_report.md
+
+      - name: Publish report to the job summary
+        if: always()
+        run: cat gate_report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload MLflow runs
         if: always()
@@ -57,5 +69,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: results
-          path: results/
+          path: |
+            results/
+            gate_report.md
           retention-days: 30
+
+      - name: Fail if any model regressed
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "A model regressed past the tolerance. See the job summary." >&2
+          exit 1

@@ -1,0 +1,116 @@
+name: benchmark-gate
+
+# Retraining that never checks the result will happily publish a worse model.
+# This job reruns the benchmark on the PR's code and refuses to go green if any
+# model regressed against the committed baseline.
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "results/figures/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies (CPU-only)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
+      - name: Download dataset
+        run: python scripts/download_data.py
+
+      # Chronos is left out: gating on a 183 MB download every PR buys nothing
+      # the other three models don't already catch. --device cpu is explicit
+      # because CUDA_VISIBLE_DEVICES is not a reliable off-switch everywhere,
+      # and the baseline was measured on CPU.
+      - name: Run benchmark
+        run: |
+          python scripts/run_benchmark.py \
+            --models persistence lightgbm lstm \
+            --device cpu \
+            --no-mlflow
+
+      - name: Compare against baseline
+        id: gate
+        continue-on-error: true
+        run: |
+          python scripts/check_regression.py \
+            --baseline results/tables/baseline_cpu.csv \
+            --candidate results/tables/benchmark_summary.csv \
+            --metric rmse \
+            --tolerance 0.03 \
+            --summary-out gate_report.md
+
+      # ETTh1 never changes, so this cannot fire on real-world drift. What it
+      # catches is the feature pipeline or the source data quietly producing a
+      # different distribution than the one on record.
+      - name: Check input drift
+        id: drift
+        continue-on-error: true
+        run: |
+          python scripts/check_drift.py \
+            --reference results/tables/drift_reference.csv \
+            --tolerance 0.02 \
+            --summary-out drift_report.md
+
+      - name: Publish reports to the job summary
+        if: always()
+        run: |
+          cat gate_report.md >> "$GITHUB_STEP_SUMMARY"
+          cat drift_report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Comment the delta on the pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat gate_report.md drift_report.md > pr_comment.md 2>/dev/null || cp gate_report.md pr_comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body-file pr_comment.md \
+            --edit-last --create-if-none
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-gate-results
+          path: |
+            results/tables/
+            gate_report.md
+            drift_report.md
+          retention-days: 30
+
+      - name: Fail on a regression or a changed input distribution
+        if: steps.gate.outcome == 'failure' || steps.drift.outcome == 'failure'
+        run: |
+          if [ "${{ steps.gate.outcome }}" = "failure" ]; then
+            echo "A model regressed past the tolerance." >&2
+          fi
+          if [ "${{ steps.drift.outcome }}" = "failure" ]; then
+            echo "Input distributions moved away from the recorded reference." >&2
+          fi
+          echo "See the job summary for the tables." >&2
+          exit 1

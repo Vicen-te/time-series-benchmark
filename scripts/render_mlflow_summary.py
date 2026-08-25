@@ -37,11 +37,19 @@ def main() -> int:
 
     runs = mlflow.search_runs(
         experiment_ids=[experiment.experiment_id],
-        order_by=["metrics.test_rmse ASC"],
+        order_by=["attributes.start_time DESC"],
     )
     if runs.empty:
         print("No runs to render yet.")
         return 1
+
+    # The store keeps every run ever logged, including ones from earlier
+    # versions of the pipeline. The README figure is meant to show where the
+    # benchmark stands now, so keep the newest run per model and rank those.
+    if "tags.mlflow.runName" in runs.columns:
+        runs = runs.drop_duplicates(subset=["tags.mlflow.runName"], keep="first")
+    if "metrics.test_rmse" in runs.columns:
+        runs = runs.sort_values("metrics.test_rmse")
 
     display_cols = {
         "tags.mlflow.runName": "run",

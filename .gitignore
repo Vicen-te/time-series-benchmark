@@ -56,3 +56,6 @@ logs/
 
 # OS
 Thumbs.db
+
+# Regenerated on every drift check; drift_reference.csv is the committed one.
+results/tables/drift_report.csv
