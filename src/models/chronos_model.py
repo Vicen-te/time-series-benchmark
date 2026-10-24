@@ -101,7 +101,11 @@ class ChronosForecaster(BaseForecaster):
         truth_index: list[pd.Timestamp] = []
 
         for i in range(len(target_values)):
-            end = history_offset + i
+            # The forecast origin for target row ``i`` is ``i - horizon``: the
+            # context must stop there, exactly where persistence, LightGBM and
+            # the LSTM stop. Ending it at ``i - 1`` would hand the model
+            # ``horizon - 1`` observations the others are not allowed to see.
+            end = history_offset + i - horizon + 1
             start = max(0, end - context_length)
             window = full_series[start:end]
             if len(window) < 8:

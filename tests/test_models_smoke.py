@@ -162,6 +162,50 @@ def test_chronos_context_handling_reproduces_persistence(synthetic_splits) -> No
     assert np.allclose(y_pred.to_numpy(), base_pred.to_numpy(), atol=1e-4)
 
 
+class _RecordingPipeline:
+    """Stub pipeline that keeps every context it was given."""
+
+    def __init__(self) -> None:
+        self.contexts: list = []
+
+    def predict(self, context, prediction_length):
+        import torch
+
+        self.contexts.extend(torch.as_tensor(c).clone() for c in context)
+        last = torch.stack([torch.as_tensor(c)[-1] for c in context]).to(torch.float32)
+        return last.view(-1, 1, 1).repeat(1, 3, prediction_length)
+
+
+@pytest.mark.parametrize("horizon", [1, 24, 96])
+def test_chronos_context_ends_at_the_forecast_origin(horizon) -> None:
+    """The last context value for a target at time T must be the one at T - horizon.
+
+    With the series equal to its own row number, the last value of each context
+    reveals which row it ended on. Persistence, LightGBM and the LSTM all stop
+    at T - horizon; a Chronos window that stops later sees observations they
+    are not allowed to, and only shows up at horizons above 1.
+    """
+
+    from src.models import ChronosForecaster
+
+    index = pd.date_range("2020-01-01", periods=1200, freq="h")
+    frame = pd.DataFrame({"OT": np.arange(len(index), dtype=np.float32)}, index=index)
+    context, test = frame.iloc[:900], frame.iloc[900:]
+
+    chronos = ChronosForecaster(horizon=horizon)
+    chronos.pipeline_ = _RecordingPipeline()
+    y_true, y_pred = chronos.predict(test, context=context)
+
+    assert y_true.index.equals(test.index)
+    last_seen = np.array([float(c[-1]) for c in chronos.pipeline_.contexts])
+    assert np.array_equal(last_seen, y_true.to_numpy() - horizon)
+    assert np.array_equal(y_pred.to_numpy(), y_true.to_numpy() - horizon)
+
+    baseline = PersistenceForecaster(horizon=horizon)
+    _, base_pred = baseline.predict(test, context=context)
+    assert np.array_equal(y_pred.to_numpy(), base_pred.to_numpy())
+
+
 def test_chronos_without_context_cannot_score_the_earliest_rows(synthetic_splits) -> None:
     from src.models import ChronosForecaster
 
