@@ -120,6 +120,47 @@ def test_default_lag_rule_grows_with_the_sample() -> None:
     assert default_lags(0) == 0
 
 
+def test_multi_step_horizons_widen_the_bandwidth() -> None:
+    """h-step errors overlap over h - 1 steps, so the bandwidth cannot be below that."""
+
+    assert default_lags(2613, horizon=1) == default_lags(2613)
+    assert default_lags(2613, horizon=24) == 23
+    assert default_lags(2613, horizon=96) == 95
+    # A short horizon never lowers the plain rule.
+    assert default_lags(2613, horizon=2) == default_lags(2613)
+    with pytest.raises(ValueError):
+        default_lags(100, horizon=0)
+
+
+def test_dm_uses_the_horizon_bandwidth_unless_lags_are_given(truth) -> None:
+    rng = np.random.default_rng(8)
+    a = rng.normal(size=truth.size)
+    b = rng.normal(size=truth.size)
+    assert diebold_mariano(a, b).lags == default_lags(truth.size)
+    assert diebold_mariano(a, b, horizon=24).lags == 23
+    assert diebold_mariano(a, b, horizon=24, lags=5).lags == 5
+    assert diebold_mariano(a, b, horizon=1).p_value == diebold_mariano(a, b).p_value
+
+
+def test_overlapping_errors_are_not_called_significant_at_long_horizons() -> None:
+    """MA(h-1) errors with no real gap: the short bandwidth over-rejects."""
+
+    rng = np.random.default_rng(9)
+    horizon, n, trials = 24, 1500, 150
+    kernel = np.ones(horizon)
+
+    def overlapping() -> np.ndarray:
+        return np.convolve(rng.normal(size=n + horizon - 1), kernel, mode="valid")
+
+    short = wide = 0
+    for _ in range(trials):
+        a, b = overlapping(), overlapping()
+        short += diebold_mariano(a, b).significant
+        wide += diebold_mariano(a, b, horizon=horizon).significant
+    assert wide / trials < short / trials
+    assert wide / trials < 0.15
+
+
 def test_invalid_inputs_raise(truth) -> None:
     with pytest.raises(ValueError):
         diebold_mariano([1.0, 2.0], [1.0])

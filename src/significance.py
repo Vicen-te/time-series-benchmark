@@ -50,12 +50,21 @@ def newey_west_variance(series: np.ndarray, lags: int) -> float:
     return max(variance, 0.0) / n
 
 
-def default_lags(n: int) -> int:
-    """Standard Newey-West bandwidth rule, floor(4 * (n/100)^(2/9))."""
+def default_lags(n: int, horizon: int = 1) -> int:
+    """Newey-West bandwidth: floor(4 * (n/100)^(2/9)), but at least ``horizon - 1``.
 
+    The errors of an h-step forecast overlap over h - 1 steps by construction
+    (MA(h-1)), so a smaller bandwidth understates the variance of the loss
+    differential and overstates significance. At horizon 1 this is the plain
+    rule.
+    """
+
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1.")
     if n <= 0:
         return 0
-    return int(math.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+    rule = int(math.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+    return max(rule, horizon - 1)
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,7 @@ def diebold_mariano(
     errors_b: Iterable[float],
     loss: str = "squared",
     lags: Optional[int] = None,
+    horizon: int = 1,
 ) -> DMResult:
     """Test whether ``a`` forecasts better than ``b``.
 
@@ -99,7 +109,7 @@ def diebold_mariano(
         differential = np.abs(a) - np.abs(b)
 
     n = differential.size
-    used_lags = default_lags(n) if lags is None else lags
+    used_lags = default_lags(n, horizon) if lags is None else lags
     variance = newey_west_variance(differential, used_lags)
 
     mean_diff = float(differential.mean())
@@ -124,6 +134,7 @@ def pairwise_significance(
     predictions: Mapping[str, pd.Series],
     loss: str = "squared",
     lags: Optional[int] = None,
+    horizon: int = 1,
 ) -> pd.DataFrame:
     """Every pair of models, tested on the rows they share with ``y_true``."""
 
@@ -136,7 +147,7 @@ def pairwise_significance(
         err_a = truth - predictions[name_a].loc[common].to_numpy(dtype=np.float64)
         err_b = truth - predictions[name_b].loc[common].to_numpy(dtype=np.float64)
 
-        result = diebold_mariano(err_a, err_b, loss=loss, lags=lags)
+        result = diebold_mariano(err_a, err_b, loss=loss, lags=lags, horizon=horizon)
         rmse_a = float(np.sqrt(np.mean(err_a**2)))
         rmse_b = float(np.sqrt(np.mean(err_b**2)))
         frame_rows.append(
@@ -163,13 +174,16 @@ def p_values_against(
     predictions: Mapping[str, pd.Series],
     loss: str = "squared",
     lags: Optional[int] = None,
+    horizon: int = 1,
 ) -> Dict[str, float]:
     """p-value of every model against ``reference``, for the summary table."""
 
     if reference not in predictions:
         return {}
 
-    pairs = pairwise_significance(y_true, predictions, loss=loss, lags=lags)
+    pairs = pairwise_significance(
+        y_true, predictions, loss=loss, lags=lags, horizon=horizon
+    )
     out: Dict[str, float] = {reference: float("nan")}
     for row in pairs.itertuples():
         if row.model_a == reference:

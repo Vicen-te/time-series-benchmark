@@ -157,9 +157,11 @@ def main() -> int:
     # A ranking to four decimals says nothing about whether the gaps are real.
     pairs = pd.DataFrame()
     if y_test_truth is not None and len(predictions) > 1:
-        pairs = pairwise_significance(y_test_truth, predictions)
+        pairs = pairwise_significance(y_test_truth, predictions, horizon=horizon)
         pairs.to_csv(tables_dir / "significance.csv", index=False)
-        p_map = p_values_against(BASELINE_MODEL, y_test_truth, predictions)
+        p_map = p_values_against(
+            BASELINE_MODEL, y_test_truth, predictions, horizon=horizon
+        )
         if p_map:
             summary[f"p_vs_{BASELINE_MODEL}"] = summary["model"].map(p_map)
 
