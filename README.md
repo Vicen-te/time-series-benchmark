@@ -10,7 +10,7 @@ a drift check over the model inputs.
 
 > Headline horizon: 1 hour ahead. Target: `OT` (oil temperature, C).
 > The same pipeline is also run at 24 and 96 hours, and
-> [the answer changes completely](#the-horizon-decides-the-answer).
+> [the answer changes](#the-horizon-decides-the-answer).
 > Train/val/test split is **temporal** (70 / 15 / 15), never randomised.
 > All four models are scored on the identical 2 613 test rows, and every gap
 > between them is reported with a p-value.
@@ -154,10 +154,10 @@ time-series-benchmark/
 
 | model    |    MAE |   RMSE |     R2 |    MAPE |    n | p vs baseline | fit (s) | predict (s) |
 |:---------|-------:|-------:|-------:|--------:|-----:|--------------:|--------:|------------:|
-| chronos  | 0.4325 | 0.6515 | 0.9473 |  6.52% | 2613 | 0.384 |    1.28 |        7.35 |
+| chronos  | 0.4325 | 0.6515 | 0.9473 |  6.53% | 2613 | 0.383 |    1.74 |        7.26 |
 | _persistence_ | _0.4448_ | _0.6589_ | _0.9461_ | _6.45%_ | 2613 | -- |    0.00 |        0.00 |
-| lstm     | 0.4556 | 0.6690 | 0.9445 |  6.70% | 2613 | 0.079 |    6.58 |        0.08 |
-| lightgbm | 0.4837 | 0.6909 | 0.9408 |  7.98% | 2613 | 0.011 |    2.37 |        0.05 |
+| lstm     | 0.4556 | 0.6690 | 0.9445 |  6.70% | 2613 | 0.079 |    7.67 |        0.09 |
+| lightgbm | 0.4837 | 0.6909 | 0.9408 |  7.98% | 2613 | 0.011 |    2.51 |        0.06 |
 
 **Read the second row first.** `persistence` is not a model. It forecasts `OT[t]` as `OT[t-1]`, costs nothing to fit and nothing to run. Chronos comes out 1.1% ahead of it on RMSE and behind it on MAPE; the LSTM and LightGBM, both trained on 12 194 hours, are behind it on everything.
 
@@ -165,12 +165,12 @@ time-series-benchmark/
 
 | pair | delta RMSE | DM | p | verdict |
 |:---|---:|---:|---:|:---|
-| chronos vs lightgbm | -0.0394 | -2.96 | 0.0031 | distinguishable |
+| chronos vs lightgbm | -0.0394 | -2.95 | 0.0031 | distinguishable |
 | persistence vs lightgbm | -0.0320 | -2.55 | 0.0108 | distinguishable |
-| lstm vs chronos | +0.0175 | +1.98 | 0.0472 | distinguishable |
+| lstm vs chronos | +0.0176 | +1.97 | 0.0483 | distinguishable |
 | lightgbm vs lstm | +0.0219 | +1.73 | 0.0832 | not distinguishable |
 | persistence vs lstm | -0.0101 | -1.76 | 0.0786 | not distinguishable |
-| persistence vs chronos | +0.0074 | +0.87 | 0.3837 | not distinguishable |
+| persistence vs chronos | +0.0075 | +0.87 | 0.3831 | not distinguishable |
 
 Diebold-Mariano on squared errors over the same 2 613 rows, Newey-West variance so the serial correlation in hourly errors is not read as evidence. `results/tables/significance.csv` carries the full matrix.
 
@@ -178,7 +178,7 @@ So the honest reading of this benchmark is:
 
 - **Nothing here beats doing nothing.** Chronos' 1.1% edge over persistence has p = 0.38. On this window it is noise. Sorting the table by RMSE and calling the top row the winner would be reporting a coin flip.
 - **LightGBM is genuinely worse than the baseline** (p = 0.011), which is the one clear negative result.
-- **What does survive** is narrower and still worth something: Chronos beats LightGBM (p = 0.003) and the LSTM (p = 0.047) without seeing a single training example. A foundation model matching a tuned gradient booster zero-shot is interesting. Beating the naive baseline is a claim this data does not support.
+- **What does survive** is narrower and still worth something: Chronos beats LightGBM (p = 0.003) and the LSTM (p = 0.048) without seeing a single training example. A foundation model matching a tuned gradient booster zero-shot is interesting. Beating the naive baseline is a claim this data does not support.
 
 Two things are worth saying about *why*, both visible elsewhere in this repo. Hourly oil temperature is dominated by a near-random-walk component, so one hour out the last reading is already most of the available signal. And [25 of the 33 model inputs are significantly drifted](#input-drift) between the training window and the test window, so the trained models are applying structure learned on one temperature regime to another, while persistence carries no level information and is immune to the shift.
 
@@ -213,29 +213,42 @@ seeds run further out; those tables live beside the canonical ones, under
 | horizon | persistence RMSE | best model | its RMSE | p vs persistence | verdict |
 |---:|---:|:---|---:|---:|:---|
 | 1 h | 0.6589 | chronos | 0.6515 | 0.38 | **indistinguishable from doing nothing** |
-| 24 h | 2.2656 | chronos | **1.1392** | 4e-16 | chronos halves the error |
-| 96 h | 4.0116 | chronos | **1.7829** | <1e-16 | chronos is 2.2x better |
+| 24 h | 2.2656 | lstm | **2.1203** | 0.018 | lstm is 6% better; nothing else is distinguishable from persistence |
+| 96 h | 4.0116 | lstm | **3.2610** | 5e-4 | lstm is 19% better; chronos is 9.5% better at the edge of significance (p = 0.047) |
 
 Read per model rather than per horizon and the same table answers the only
 question that matters before buying a model: **at what point does training one
 start paying for itself?** Each cell is that model's test RMSE against the
 persistence RMSE for that horizon, with the Diebold-Mariano p-value; `tie` means
 the gap is not distinguishable from zero at the 5% level, in either direction.
+For horizons above one hour the Newey-West bandwidth is at least `h - 1` (23 at
+24 h, 95 at 96 h), because h-step forecast errors overlap by construction.
 
 | model | 1 h | 24 h | 96 h |
 |:---|:---|:---|:---|
-| **chronos** (zero-shot) | tie -- 0.6515 vs 0.6589 (p = 0.38) | **better** -- 1.1392 vs 2.2656 (p = 4e-16) | **better** -- 1.7829 vs 4.0116 (p < 1e-16) |
-| **lstm** | tie -- 0.6690 vs 0.6589 (p = 0.079) | **better** -- 2.1203 vs 2.2656 (p = 0.003) | **better** -- 3.2290 vs 4.0116 (p = 3e-14) |
-| **lightgbm** | **worse** -- 0.6909 vs 0.6589 (p = 0.011) | tie -- 2.4564 vs 2.2656 (p = 0.074) | **better** -- 3.4368 vs 4.0116 (p = 0.0005) |
+| **chronos** (zero-shot) | tie -- 0.6515 vs 0.6589 (p = 0.38) | tie -- 2.3364 vs 2.2656 (p = 0.29) | **better** -- 3.6300 vs 4.0116 (p = 0.047) |
+| **lstm** | tie -- 0.6690 vs 0.6589 (p = 0.079) | **better** -- 2.1203 vs 2.2656 (p = 0.018) | **better** -- 3.2610 vs 4.0116 (p = 5e-4) |
+| **lightgbm** | **worse** -- 0.6909 vs 0.6589 (p = 0.011) | tie -- 2.4564 vs 2.2656 (p = 0.20) | tie -- 3.4368 vs 4.0116 (p = 0.066) |
 
-Three different answers to "is this model worth it", from the same code, data
-and seeds. Chronos and the LSTM are dead weight at one hour and clearly worth
-their cost from 24 hours out; LightGBM is the slowest to earn its keep, actively
-harmful at one hour and only ahead of doing nothing at 96. Nothing in the
-one-hour column would justify a training pipeline, and nothing in the 96-hour
-column would justify skipping one. At 96 h persistence itself reaches
-R2 = -1.00 -- worse than predicting the mean, which is what a naive baseline is
-supposed to look like once the horizon is long enough to matter.
+Different answers to "is this model worth it", from the same code, data and
+seeds. Only the LSTM is clearly ahead of doing nothing at both 24 and 96 hours.
+Chronos, zero-shot, is level with persistence at one hour and 24 hours (at 24 h
+its RMSE is numerically 3% worse) and only edges ahead at 96 hours, with a
+p-value right at the 5% line, so it is not the winner at any horizon here.
+LightGBM is actively harmful at one hour and never separates from persistence
+at 24 or 96 hours, even though its 96-hour RMSE is 14% lower. Nothing in the
+one-hour column would justify a training pipeline; at 96 hours the case for one
+rests on the LSTM alone. At 96 h persistence itself reaches R2 = -1.00 -- worse
+than predicting the mean, which is what a naive baseline is supposed to look
+like once the horizon is long enough to matter.
+
+An earlier version of this table showed Chronos halving the persistence error at
+24 h and cutting it by more than half at 96 h. That came from a bug in the
+Chronos forecaster: for horizons above one hour its context window ended at
+`t - 1` instead of `t - h`, so it saw `h - 1` hours that every other model was
+not allowed to see. The window now ends at the forecast origin like the others,
+a test pins it, and the numbers above are from the corrected run. The
+one-hour results were not affected, since there the two windows coincide.
 
 **Why one hour is degenerate**, in four numbers straight from the pinned CSV:
 
@@ -267,13 +280,13 @@ inertia the series has, not how good the models are.
 
 | Use case | Recommended | Why |
 |---|---|---|
-| Short horizon on a strongly autocorrelated series | **Persistence** | Free, exact and hard to beat. Establish this number before anything else: on ETTh1 at 1 hour no trained model here is distinguishable from it, and one is measurably worse. By 24 hours it has stopped being competitive. |
-| Small/cold-start dataset, no time to train, no labels | **Chronos zero-shot** | Pre-trained on a wide corpus; works the moment you have a context window. No training infrastructure needed. |
+| Short horizon on a strongly autocorrelated series | **Persistence** | Free, exact and hard to beat. Establish this number before anything else: on ETTh1 at 1 hour no trained model here is distinguishable from it, and one is measurably worse. By 24 hours only the LSTM is ahead of it (p = 0.018), and at 96 hours it has the highest RMSE of the four. |
+| Small/cold-start dataset, no time to train, no labels | **Chronos zero-shot** | Pre-trained on a wide corpus; works the moment you have a context window. No training infrastructure needed. On ETTh1 it is level with persistence at 1 h and 24 h and only just ahead at 96 h (p = 0.047), so treat it as a cheap starting point, not a winner. |
 | Long sequences with complex temporal dependencies, you have GPU + labels | **LSTM / Transformer** | Capacity to learn non-linear lag interactions and seasonal mixing the gradient booster cannot model with lag features alone. |
 | Rich tabular features (exogenous variables, calendar, weather, prices) and you need fast training and interpretability | **LightGBM** | Trains in seconds, exposes feature importance, easy to deploy. Strong on multivariate problems where lags are just one of many signals. |
-| Production scoring with very tight latency budgets | **LightGBM** | Two orders of magnitude faster than Chronos at inference (0.044 s vs 7.37 s over the same 2 613 rows). |
+| Production scoring with very tight latency budgets | **LightGBM** | Two orders of magnitude faster than Chronos at inference (0.059 s vs 7.26 s over the same 2 613 rows). |
 
-In a real engagement the decision tree is rarely "which is the best model overall" -- it is "given my data volume, latency budget, training infrastructure and interpretability needs, **and how far ahead you have to see**, which family fits". The first row matters most, because the first question is whether a model is needed at all: on this series the measured answer is no at one hour and yes from 24 hours out.
+In a real engagement the decision tree is rarely "which is the best model overall" -- it is "given my data volume, latency budget, training infrastructure and interpretability needs, **and how far ahead you have to see**, which family fits". The first row matters most, because the first question is whether a model is needed at all: on this series the measured answer is no at one hour; from 24 hours out only the LSTM clearly earns its place, and Chronos only just does at 96 hours.
 
 ## Reproducing the benchmark
 
@@ -325,7 +338,7 @@ The script prints a summary table, dumps `results/tables/benchmark_summary.{csv,
 python scripts/mlflow_ui.py
 ```
 
-This wrapper sets `MLFLOW_ALLOW_FILE_STORE=true` (MLflow 3.x refuses file-store backends by default) and launches `mlflow ui` against `./mlruns/`. Then open <http://127.0.0.1:5000>. You should see one experiment (`time-series-benchmark`) with four runs sorted by `test_rmse`:
+This wrapper sets `MLFLOW_ALLOW_FILE_STORE=true` (MLflow 3.x refuses file-store backends by default) and launches `mlflow ui` against `./mlruns/`. Then open <http://127.0.0.1:5000>. You should see one experiment (`time-series-benchmark`) with one run per model and horizon (twelve after running 1, 24 and 96 hours; non-default horizons carry an `-h<N>` suffix), sorted by `test_rmse`:
 
 ![MLflow runs comparison](results/figures/mlflow_runs.png)
 
@@ -378,7 +391,7 @@ Hyperparameters live in [`src/config.py`](src/config.py) (`LightGBMConfig`). Val
 
 ### Chronos zero-shot
 
-We do **not** train. For each test point we feed the model the trailing `context_length = 512` observations (the warm-up tail of train + val, then already-scored test rows as the window rolls forward) and read the 1-step-ahead point forecast as the median of the predictive distribution. The model used is `amazon/chronos-bolt-small`, which runs comfortably on CPU and is a few seconds faster on GPU.
+We do **not** train. For each test point we feed the model the trailing `context_length = 512` observations (the warm-up tail of train + val, then already-scored test rows as the window rolls forward) and read the point forecast as the median of the predictive distribution. For a horizon `h` the window for the target at time `T` ends at `T - h`, the same forecast origin persistence, LightGBM and the LSTM use, and the `h`-th step of the forecast is the prediction. The model used is `amazon/chronos-bolt-small`, which runs comfortably on CPU and is a few seconds faster on GPU.
 
 ### Is the difference real?
 
@@ -386,7 +399,9 @@ Four models, six pairs, and a spread of under 6% between first and last. At that
 scale a ranking is worth nothing without a test, so `src/significance.py`
 compares every pair with Diebold-Mariano on the loss differential
 `d[t] = e_a[t]^2 - e_b[t]^2`, using a Newey-West variance with the standard
-`floor(4 * (n/100)^(2/9))` bandwidth. Hourly forecast errors are serially
+`floor(4 * (n/100)^(2/9))` bandwidth, raised to at least `h - 1` for an
+`h`-step horizon because the errors of overlapping multi-step forecasts are
+correlated over that span. Hourly forecast errors are serially
 correlated; without the lag correction that autocorrelation reads as extra
 evidence and inflates every statistic.
 
@@ -528,8 +543,12 @@ tests/test_models_smoke.py::test_every_model_is_scored_on_the_same_rows         
 tests/test_models_smoke.py::test_missing_context_shortens_the_scored_window                PASSED
 tests/test_models_smoke.py::test_context_must_precede_the_scored_frame                     PASSED
 tests/test_models_smoke.py::test_chronos_context_handling_reproduces_persistence           PASSED
+tests/test_models_smoke.py::test_chronos_context_ends_at_the_forecast_origin[1]            PASSED
+tests/test_models_smoke.py::test_chronos_context_ends_at_the_forecast_origin[24]           PASSED
+tests/test_models_smoke.py::test_chronos_context_ends_at_the_forecast_origin[96]           PASSED
 tests/test_models_smoke.py::test_chronos_without_context_cannot_score_the_earliest_rows    PASSED
 tests/test_models_smoke.py::test_chronos_requires_a_loaded_pipeline                        PASSED
+tests/test_models_smoke.py::test_build_model_propagates_the_horizon_to_every_model         PASSED
 tests/test_quality_gate.py::test_identical_run_passes                                      PASSED
 tests/test_quality_gate.py::test_improvement_passes                                        PASSED
 tests/test_quality_gate.py::test_regression_beyond_tolerance_fails                         PASSED
@@ -547,6 +566,9 @@ tests/test_significance.py::test_absolute_loss_is_supported                     
 tests/test_significance.py::test_serial_correlation_widens_the_interval                    PASSED
 tests/test_significance.py::test_newey_west_with_no_lags_is_the_plain_variance_of_the_mean PASSED
 tests/test_significance.py::test_default_lag_rule_grows_with_the_sample                    PASSED
+tests/test_significance.py::test_multi_step_horizons_widen_the_bandwidth                   PASSED
+tests/test_significance.py::test_dm_uses_the_horizon_bandwidth_unless_lags_are_given       PASSED
+tests/test_significance.py::test_overlapping_errors_are_not_called_significant_at_long_horizons PASSED
 tests/test_significance.py::test_invalid_inputs_raise                                      PASSED
 tests/test_significance.py::test_pairwise_covers_every_combination                         PASSED
 tests/test_significance.py::test_pairwise_separates_the_real_gap_from_the_twin             PASSED
@@ -554,7 +576,7 @@ tests/test_significance.py::test_p_values_against_a_reference                   
 tests/test_significance.py::test_pairwise_uses_only_shared_rows                            PASSED
 tests/test_significance.py::test_markdown_puts_the_strongest_evidence_first                PASSED
 
-74 passed
+81 passed
 ```
 
 The key tests (the ones I would point a reviewer at):
@@ -564,6 +586,8 @@ The key tests (the ones I would point a reviewer at):
 - `tests/test_quality_gate.py` -- proves the CI gate fails on a real regression and passes on machine noise, in both directions. A gate that is wrong is worse than no gate: a false pass ships the regression it exists to stop, a false failure gets switched off within a week.
 - `test_psi_grows_with_the_size_of_the_injected_shift` and `test_psi_catches_a_variance_only_shift` -- prove the drift detector actually detects. Run against a frozen dataset it can only ever return the same answer, so the green tick means nothing until the detector has been shown drift it had to find.
 - `test_false_positive_rate_stays_near_the_nominal_five_percent` -- proves the significance test does not manufacture winners out of noise, which is the failure mode that would quietly justify the headline this README used to carry.
+- `test_chronos_context_ends_at_the_forecast_origin` -- feeds Chronos a series equal to its own row number through a stub pipeline and checks that the last context value for a target at time `T` is the one at `T - h`, for `h` of 1, 24 and 96. It fails on the earlier code for every `h` above 1, which is how the look-ahead went unnoticed: it only matters beyond one hour.
+- `test_multi_step_horizons_widen_the_bandwidth` and `test_overlapping_errors_are_not_called_significant_at_long_horizons` -- pin the Newey-West bandwidth at `max(rule, h - 1)` and show that with overlapping errors the wider bandwidth rejects less often than the plain rule.
 - `test_chronos_context_handling_reproduces_persistence` -- runs the Chronos forecaster against a stub pipeline that repeats the last observation, so its warm-up stitching and index alignment must reproduce the persistence baseline exactly. Covers the code around the foundation model without downloading 183 MB in CI.
 - `test_rolling_window_does_not_include_current_row` -- proves the pre-shift works so the rolling stat at time `t` only sees `[t-w-horizon, t-horizon]`, never the target itself.
 - `test_temporal_split_is_chronological_and_sums_to_total` -- proves the splits are time-ordered (`train.max < val.min < test.min`) and cover the dataset.
